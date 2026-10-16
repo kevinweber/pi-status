@@ -1,0 +1,62 @@
+{
+  "name": "@kevinweber/pi-status",
+  "version": "1.0.3",
+  "description": "Pi terminal tab titles with session names and working, waiting-for-input, and idle indicators",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "pi-coding-agent",
+    "terminal-title",
+    "tab-title",
+    "terminal-status",
+    "session-name",
+    "progress-indicator",
+    "action-required",
+    "working",
+    "waiting",
+    "idle"
+  ],
+  "author": "Kevin Weber",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "src/index.ts",
+    "assets/preview.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kevinweber/pi-status.git"
+  },
+  "homepage": "https://github.com/kevinweber/pi-status#readme",
+  "bugs": {
+    "url": "https://github.com/kevinweber/pi-status/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "image": "https://raw.githubusercontent.com/kevinweber/pi-status/main/assets/preview.svg"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "scripts": {
+    "check": "node --check src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test src/index.test.mjs",
+    "prepublishOnly": "npm run ci",
+    "ci": "npm run check && npm run typecheck && npm run test"
+  }
+}

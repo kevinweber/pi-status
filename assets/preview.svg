@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">pi-status terminal title preview</title>
+  <desc id="desc">Working, waiting for input, and idle terminal tab title examples</desc>
+  <rect width="1200" height="630" fill="#111318"/>
+  <rect x="90" y="75" width="1020" height="480" rx="18" fill="#1c1f26" stroke="#343945" stroke-width="2"/>
+  <text x="145" y="155" fill="#f2f4f8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="44" font-weight="700">pi-status</text>
+  <text x="145" y="205" fill="#9aa4b2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="24">state and session name in every terminal tab</text>
+  <rect x="145" y="255" width="910" height="70" rx="10" fill="#272b34"/>
+  <text x="180" y="302" fill="#f2f4f8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="30">⏳ my-tab</text>
+  <text x="770" y="302" fill="#b7c0cc" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="24">working</text>
+  <rect x="145" y="345" width="910" height="70" rx="10" fill="#272b34"/>
+  <text x="180" y="392" fill="#f2f4f8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="30">❗ my-tab</text>
+  <text x="770" y="392" fill="#b7c0cc" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="24">waiting for input</text>
+  <rect x="145" y="435" width="910" height="70" rx="10" fill="#272b34"/>
+  <text x="180" y="482" fill="#f2f4f8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="30">✓ my-tab</text>
+  <text x="770" y="482" fill="#b7c0cc" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="24">idle</text>
+</svg>
