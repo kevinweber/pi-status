@@ -1,14 +1,3 @@
-/**
- * Tests for pi-status.
- * Run with: node --experimental-strip-types --test src/index.test.mjs
- *
- * Pure helper tests import the real exports from src/index.ts via Node's
- * --experimental-strip-types loader (Node >=22.6). No duplicated logic.
- *
- * Integration tests mock the ExtensionAPI (pi.on / ui.setTitle) and drive
- * the full extension lifecycle.
- */
-
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
@@ -16,10 +5,6 @@ import { dirname, join } from "node:path";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const SRC = join(__dir, "index.ts");
-
-// ── Load real exports ─────────────────────────────────────────────────────────
-// Node 22.6+ with --experimental-strip-types can import .ts directly.
-// Dynamic import gives us the real implementation with no logic duplication.
 
 let mod;
 let loadError;
@@ -31,7 +16,6 @@ try {
 }
 
 if (loadError) {
-  // Emit one failing test so CI surfaces the problem clearly.
   test("module load (required for all tests)", () => {
     throw new Error(
       "src/index.ts could not be loaded. Run the test suite with:\n" +
@@ -50,24 +34,19 @@ if (loadError) {
     default: extensionFactory,
   } = mod;
 
-  // ── ExtensionAPI mock ────────────────────────────────────────────────────────
 
-  function makeCtx(sessionId, sessionName = null, cwd = "/tmp/test", { idle = false } = {}) {
-    let _idle = idle;
-    const ctx = {
+  function makeCtx(sessionId, sessionName = null, cwd = "/tmp/test") {
+    return {
       sessionManager: {
         getSessionId: () => sessionId,
         getSessionName: () => sessionName,
       },
       cwd,
-      isIdle: () => _idle,
-      _setIdle: (v) => { _idle = v; },
       ui: {
         _calls: [],
         setTitle(t) { this._calls.push(t); },
       },
     };
-    return ctx;
   }
 
   function makeMockApi() {
@@ -83,16 +62,13 @@ if (loadError) {
     };
   }
 
-  // ── Constants ─────────────────────────────────────────────────────────────
 
-  describe("constants (real source)", () => {
+  describe("constants", () => {
     test("TITLE_MAX is 80", () => assert.equal(TITLE_MAX, 80));
     test("REASSERT_DELAY_MS is 500", () => assert.equal(REASSERT_DELAY_MS, 500));
   });
 
-  // ── truncate ──────────────────────────────────────────────────────────────
-
-  describe("truncate (real source)", () => {
+  describe("truncate", () => {
     test("short string unchanged", () => assert.equal(truncate("hello", 10), "hello"));
     test("exact length unchanged", () => assert.equal(truncate("abcde", 5), "abcde"));
     test("long string gets ellipsis and correct length", () => {
@@ -112,17 +88,13 @@ if (loadError) {
     });
   });
 
-  // ── oneLine ───────────────────────────────────────────────────────────────
-
-  describe("oneLine (real source)", () => {
+  describe("oneLine", () => {
     test("collapses whitespace", () => assert.equal(oneLine("a  b\tc"), "a b c"));
     test("removes newlines", () => assert.equal(oneLine("a\nb"), "a b"));
     test("trims edges", () => assert.equal(oneLine("  hello  "), "hello"));
   });
 
-  // ── envEnabled ────────────────────────────────────────────────────────────
-
-  describe("envEnabled (real source)", () => {
+  describe("envEnabled", () => {
     test("returns default true when env unset", () => {
       delete process.env._TEST_PI_STATUS_FLAG;
       assert.equal(envEnabled("_TEST_PI_STATUS_FLAG", true), true);
@@ -147,40 +119,49 @@ if (loadError) {
     });
   });
 
-  // ── buildTitle ────────────────────────────────────────────────────────────
-
-  describe("buildTitle: state glyphs (real source)", () => {
+  describe("buildTitle: state glyphs", () => {
     const base = { cwd: "/tmp/test-project", sessionName: undefined };
-    test("working → ⏳", () => assert.ok(buildTitle({ ...base, state: "working" }).startsWith("⏳")));
-    test("needs-you → ❗", () => assert.ok(buildTitle({ ...base, state: "needs-you" }).startsWith("❗")));
-    test("resting → ✓", () => assert.ok(buildTitle({ ...base, state: "resting" }).startsWith("✓")));
+    test("activity=working, no prompt → ⏳", () =>
+      assert.ok(buildTitle({ ...base, activity: "working", promptOpen: false }).startsWith("⏳")));
+    test("activity=resting, prompt open → ❗ (prompt wins)", () =>
+      assert.ok(buildTitle({ ...base, activity: "resting", promptOpen: true }).startsWith("❗")));
+    test("activity=working, prompt open → ❗ (prompt wins)", () =>
+      assert.ok(buildTitle({ ...base, activity: "working", promptOpen: true }).startsWith("❗")));
+    test("activity=resting, no prompt → ✓", () =>
+      assert.ok(buildTitle({ ...base, activity: "resting", promptOpen: false }).startsWith("✓")));
   });
 
-  describe("buildTitle: session name (real source)", () => {
+  describe("buildTitle: session name", () => {
     test("uses sessionName when set", () =>
-      assert.equal(buildTitle({ state: "working", cwd: "/tmp/foo", sessionName: "my-tab" }), "⏳ my-tab"));
+      assert.equal(
+        buildTitle({ activity: "working", promptOpen: false, cwd: "/tmp/foo", sessionName: "my-tab" }),
+        "⏳ my-tab",
+      ));
     test("sessionName takes priority over cwd", () =>
-      assert.equal(buildTitle({ state: "resting", cwd: "/tmp/project", sessionName: "custom" }), "✓ custom"));
+      assert.equal(
+        buildTitle({ activity: "resting", promptOpen: false, cwd: "/tmp/project", sessionName: "custom" }),
+        "✓ custom",
+      ));
     test("long sessionName truncated to TITLE_MAX", () => {
-      const t = buildTitle({ state: "working", cwd: "/tmp", sessionName: "x".repeat(120) });
+      const t = buildTitle({ activity: "working", promptOpen: false, cwd: "/tmp", sessionName: "x".repeat(120) });
       assert.ok(Array.from(t).length <= TITLE_MAX);
       assert.ok(t.endsWith("…"));
     });
   });
 
-  describe("buildTitle: cwd fallback (real source)", () => {
+  describe("buildTitle: cwd fallback", () => {
     const origEnv = process.env.PI_STATUS_TITLE_CWD;
     test("shows basename by default", () => {
       delete process.env.PI_STATUS_TITLE_CWD;
       assert.ok(
-        buildTitle({ state: "resting", cwd: "/Users/demo/my-project", sessionName: undefined })
+        buildTitle({ activity: "resting", promptOpen: false, cwd: "/Users/demo/my-project", sessionName: undefined })
           .includes("my-project"),
       );
     });
     test("hides cwd when PI_STATUS_TITLE_CWD=0", () => {
       process.env.PI_STATUS_TITLE_CWD = "0";
       assert.equal(
-        buildTitle({ state: "resting", cwd: "/Users/demo/my-project", sessionName: undefined }),
+        buildTitle({ activity: "resting", promptOpen: false, cwd: "/Users/demo/my-project", sessionName: undefined }),
         "✓",
       );
       process.env.PI_STATUS_TITLE_CWD = origEnv ?? "";
@@ -188,373 +169,424 @@ if (loadError) {
     test("hides cwd when PI_STATUS_TITLE_CWD=false", () => {
       process.env.PI_STATUS_TITLE_CWD = "false";
       assert.equal(
-        buildTitle({ state: "working", cwd: "/Users/demo/my-project", sessionName: undefined }),
+        buildTitle({ activity: "working", promptOpen: false, cwd: "/Users/demo/my-project", sessionName: undefined }),
         "⏳",
       );
       process.env.PI_STATUS_TITLE_CWD = origEnv ?? "";
     });
   });
 
-  // ── Integration: event registration ──────────────────────────────────────
 
-  describe("ExtensionAPI: event handler registration", () => {
+  describe("handler registration", () => {
     test("registers all required handlers", () => {
       const pi = makeMockApi();
       extensionFactory(pi);
       for (const ev of [
         "session_start", "session_info_changed", "session_shutdown",
         "model_select", "agent_start", "ui_prompt_start", "ui_prompt_end", "agent_settled",
+        "session_before_compact", "session_compact", "session_compact_failed",
       ]) {
         assert.ok(pi._handlers[ev], `missing handler for "${ev}"`);
       }
     });
   });
 
-  // ── Integration: initial / resting state ─────────────────────────────────
-
-  describe("ExtensionAPI: initial/resting state", () => {
-    test("session_start → resting title", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
+  describe("basic state transitions", () => {
+    test("session_start → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
       const ctx = makeCtx("s1", "my-tab");
       await pi.fire("session_start", {}, ctx);
-      assert.ok(ctx.ui._calls.length >= 1);
       assert.equal(ctx.ui._calls[0], "✓ my-tab");
     });
-  });
 
-  // ── Integration: working state ────────────────────────────────────────────
-
-  describe("ExtensionAPI: working state", () => {
-    test("agent_start → working title", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s2", "work-tab");
+    test("agent_start → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("s2", "tab");
       await pi.fire("session_start", {}, ctx);
       ctx.ui._calls.length = 0;
       await pi.fire("agent_start", {}, ctx);
-      assert.ok(ctx.ui._calls.length >= 1);
-      assert.equal(ctx.ui._calls[0], "⏳ work-tab");
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
     });
 
-    test("agent_start while prompt open → stays needs-you", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s2b", "work-tab2");
-      await pi.fire("session_start", {}, ctx);
-      await pi.fire("ui_prompt_start", {}, ctx); // idle prompt
-      ctx.ui._calls.length = 0;
-      await pi.fire("agent_start", {}, ctx); // agent starts while prompt open
-      assert.ok(ctx.ui._calls.length >= 1);
-      assert.equal(ctx.ui._calls[0], "❗ work-tab2", `expected needs-you, got: ${ctx.ui._calls[0]}`);
-    });
-  });
-
-  // ── Integration: needs-you state ─────────────────────────────────────────
-
-  describe("ExtensionAPI: needs-you state", () => {
-    test("ui_prompt_start → needs-you title", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s3", "prompt-tab");
-      await pi.fire("session_start", {}, ctx);
-      ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_start", {}, ctx);
-      assert.ok(ctx.ui._calls.length >= 1);
-      assert.equal(ctx.ui._calls[0], "❗ prompt-tab");
-    });
-  });
-
-  // ── Integration: settle ──────────────────────────────────────────────────
-
-  describe("ExtensionAPI: settle", () => {
-    test("agent_settled → resting title when idle", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s4", "settle-tab", "/tmp", { idle: true });
+    test("agent_settled → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("s3", "tab");
       await pi.fire("session_start", {}, ctx);
       await pi.fire("agent_start", {}, ctx);
       ctx.ui._calls.length = 0;
       await pi.fire("agent_settled", {}, ctx);
-      assert.ok(ctx.ui._calls.length >= 1);
-      assert.equal(ctx.ui._calls[0], "✓ settle-tab");
+      assert.equal(ctx.ui._calls[0], "✓ tab");
     });
 
-    test("agent_settled while prompt open → stays needs-you", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s4b", "settle-tab2", "/tmp", { idle: false });
+    test("ui_prompt_start → needs-you", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("s4", "tab");
       await pi.fire("session_start", {}, ctx);
-      await pi.fire("agent_start", {}, ctx);
-      await pi.fire("ui_prompt_start", {}, ctx); // prompt opens mid-run
       ctx.ui._calls.length = 0;
-      await pi.fire("agent_settled", {}, ctx); // main settles but prompt still open
-      assert.ok(ctx.ui._calls.length >= 1);
-      assert.equal(ctx.ui._calls[0], "❗ settle-tab2", `expected needs-you, got: ${ctx.ui._calls[0]}`);
-    });
-
-    test("agent_settled while prompt open, then prompt closes → resting (idle)", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s4c", "settle-tab3", "/tmp", { idle: true });
-      await pi.fire("session_start", {}, ctx);
-      await pi.fire("agent_start", {}, ctx);
       await pi.fire("ui_prompt_start", {}, ctx);
-      await pi.fire("agent_settled", {}, ctx); // settles while prompt open → needs-you
+      assert.equal(ctx.ui._calls[0], "❗ tab");
+    });
+
+    test("ui_prompt_end (after idle prompt) → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("s5", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
       ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_end", {}, ctx); // prompt closes → resting (idle)
-      assert.equal(ctx.ui._calls[0], "✓ settle-tab3", `expected resting, got: ${ctx.ui._calls[0]}`);
+      await pi.fire("ui_prompt_end", {}, ctx);
+      assert.equal(ctx.ui._calls[0], "✓ tab");
+    });
+
+    test("full lifecycle: start → working → prompt → working → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("s6", "my-session");
+      await pi.fire("session_start", {}, ctx);    // ✓
+      await pi.fire("agent_start", {}, ctx);      // ⏳
+      await pi.fire("ui_prompt_start", {}, ctx);  // ❗
+      await pi.fire("ui_prompt_end", {}, ctx);    // ⏳ (activity=working)
+      await pi.fire("agent_settled", {}, ctx);    // ✓
+      const [t0, t1, t2, t3, t4] = ctx.ui._calls;
+      assert.equal(t0, "✓ my-session");
+      assert.equal(t1, "⏳ my-session");
+      assert.equal(t2, "❗ my-session");
+      assert.equal(t3, "⏳ my-session");
+      assert.equal(t4, "✓ my-session");
     });
   });
 
-  // ── Integration: session_info_changed updates name ────────────────────────
 
-  describe("ExtensionAPI: session_info_changed", () => {
-    test("name change reflected in title immediately", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s5", null, "/tmp/my-project");
+  describe("prompt × activity interleavings", () => {
+    // agent_start while prompt open: activity=working, display=needs-you
+    test("agent_start during prompt → needs-you; prompt close → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("ia1", "tab");
       await pi.fire("session_start", {}, ctx);
-      assert.ok(ctx.ui._calls[0].includes("my-project"), `initial title: ${ctx.ui._calls[0]}`);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("agent_start", {}, ctx);         // activity=working, prompt open → ❗
+      assert.equal(ctx.ui._calls[0], "❗ tab");
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);        // prompt closes → ⏳
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+    });
+
+    // agent_settled while prompt open: activity=resting, display=needs-you
+    test("agent_settled during prompt → needs-you; prompt close → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("ia2", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("agent_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("agent_settled", {}, ctx);        // activity=resting, prompt open → ❗
+      assert.equal(ctx.ui._calls[0], "❗ tab");
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);        // prompt closes → ✓
+      assert.equal(ctx.ui._calls[0], "✓ tab");
+    });
+
+    // prompt closes before agent_settled: working, then resting
+    test("prompt close before agent_settled → working then resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("ia3", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("agent_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);        // activity=working → ⏳
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+      ctx.ui._calls.length = 0;
+      await pi.fire("agent_settled", {}, ctx);        // → ✓
+      assert.equal(ctx.ui._calls[0], "✓ tab");
+    });
+
+    // NEW: auto compact → prompt opens → agent_settled while prompt open → prompt close → resting
+    test("auto compact → prompt → agent_settled while open → prompt close → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("ia4", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("agent_start", {}, ctx);                                              // activity=working
+      await pi.fire("session_compact", { reason: "threshold", willRetry: false }, ctx);  // activity=working
+      await pi.fire("ui_prompt_start", {}, ctx);                                          // display=❗
+      ctx.ui._calls.length = 0;
+      await pi.fire("agent_settled", {}, ctx);   // activity=resting, prompt open → ❗
+      assert.equal(ctx.ui._calls[0], "❗ tab", `after agent_settled: ${ctx.ui._calls[0]}`);
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);   // prompt closes → activity=resting → ✓
+      assert.equal(ctx.ui._calls[0], "✓ tab", `after prompt close: ${ctx.ui._calls[0]}`);
+    });
+
+    // NEW: compaction starts during prompt → working after close
+    test("session_before_compact during prompt → needs-you; prompt close → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("ia5", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_before_compact", { reason: "threshold", willRetry: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "❗ tab");    // activity=working but prompt wins
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);     // prompt closes → ⏳
+      assert.equal(ctx.ui._calls[0], "⏳ tab", `after prompt close: ${ctx.ui._calls[0]}`);
+    });
+
+    // NEW: new agent_start during prompt → working after prompt closes (no stale state)
+    test("new agent_start during prompt → working after prompt close", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("ia6", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("agent_settled", {}, ctx);    // ensure resting first
+      await pi.fire("ui_prompt_start", {}, ctx);  // prompt opens (idle prompt)
+      ctx.ui._calls.length = 0;
+      await pi.fire("agent_start", {}, ctx);       // new run starts — activity=working
+      assert.equal(ctx.ui._calls[0], "❗ tab");   // prompt still open → ❗
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);     // prompt closes → ⏳
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+    });
+
+    // Duplicate prompt_start is idempotent
+    test("duplicate ui_prompt_start → still needs-you", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("ia7", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("agent_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_start", {}, ctx);
+      assert.equal(ctx.ui._calls[0], "❗ tab");
+    });
+
+    // Duplicate prompt_end falls through to activity (working)
+    test("duplicate ui_prompt_end → working (activity unchanged)", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("ia8", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("agent_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      await pi.fire("ui_prompt_end", {}, ctx);    // first end → ⏳
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);    // spurious second end → still ⏳
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+    });
+  });
+
+
+  describe("session_info_changed", () => {
+    test("name change reflected in title immediately", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sinf1", null, "/tmp/my-project");
+      await pi.fire("session_start", {}, ctx);
+      assert.ok(ctx.ui._calls[0].includes("my-project"));
 
       ctx.sessionManager.getSessionName = () => "renamed-tab";
       ctx.ui._calls.length = 0;
       await pi.fire("session_info_changed", {}, ctx);
-      assert.ok(ctx.ui._calls.length >= 1);
-      assert.ok(
-        ctx.ui._calls[0].includes("renamed-tab"),
-        `expected renamed-tab, got: ${ctx.ui._calls[0]}`,
-      );
+      assert.ok(ctx.ui._calls[0].includes("renamed-tab"), `got: ${ctx.ui._calls[0]}`);
     });
   });
 
-  // ── Integration: two sessions stay isolated ───────────────────────────────
 
-  describe("ExtensionAPI: two sessions isolated", () => {
+  describe("session isolation", () => {
     test("state changes in A do not affect B", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-
+      const pi = makeMockApi(); extensionFactory(pi);
       const ctxA = makeCtx("sid-A", "tab-a");
-      const ctxB = makeCtx("sid-B", "tab-b", "/tmp", { idle: true });
-
+      const ctxB = makeCtx("sid-B", "tab-b");
       await pi.fire("session_start", {}, ctxA);
       await pi.fire("session_start", {}, ctxB);
-      await pi.fire("agent_start", {}, ctxA);  // A → working
-
+      await pi.fire("agent_start", {}, ctxA);
       ctxB.ui._calls.length = 0;
-      await pi.fire("agent_settled", {}, ctxB); // B explicitly settles
+      await pi.fire("agent_settled", {}, ctxB);
       assert.equal(ctxB.ui._calls[0], "✓ tab-b");
-
       const lastA = ctxA.ui._calls[ctxA.ui._calls.length - 1];
       assert.equal(lastA, "⏳ tab-a");
     });
   });
 
-  // ── Integration: session_shutdown cancels timer / deletes state ───────────
 
-  describe("ExtensionAPI: session_shutdown", () => {
+  describe("session_shutdown", () => {
     test("cancels reassert timer; no delayed title update after shutdown", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-
-      const ctx = makeCtx("sid-shutdown", "dying-tab");
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sd1", "dying-tab");
       await pi.fire("session_start", {}, ctx);
       await pi.fire("agent_start", {}, ctx);
       const callsBefore = ctx.ui._calls.length;
-
       await pi.fire("session_shutdown", {}, ctx);
-
-      // Wait well past REASSERT_DELAY_MS
       await new Promise((res) => setTimeout(res, REASSERT_DELAY_MS + 100));
-
-      assert.equal(
-        ctx.ui._calls.length, callsBefore,
-        `setTitle fired after shutdown (${ctx.ui._calls.length - callsBefore} unexpected)`,
-      );
+      assert.equal(ctx.ui._calls.length, callsBefore,
+        `setTitle fired after shutdown (${ctx.ui._calls.length - callsBefore} unexpected)`);
     });
 
     test("after shutdown, same sessionId starts fresh (resting)", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("sid-restart", "restart-tab");
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sd2", "restart-tab");
       await pi.fire("session_start", {}, ctx);
       await pi.fire("agent_start", {}, ctx);
       await pi.fire("session_shutdown", {}, ctx);
-
       ctx.ui._calls.length = 0;
       await pi.fire("session_start", {}, ctx);
       assert.equal(ctx.ui._calls[0], "✓ restart-tab");
     });
   });
 
-  // ── Integration: ui_prompt_end idle-awareness ───────────────────────────
 
-  describe("ExtensionAPI: ui_prompt_end idle-awareness", () => {
-    test("overlay end while idle → resting title", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s-idle-end", "idle-tab", "/tmp", { idle: true });
+  describe("compaction: session_before_compact", () => {
+    test("no prompt → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("cb1", "tab");
       await pi.fire("session_start", {}, ctx);
-      await pi.fire("ui_prompt_start", {}, ctx);  // overlay shown
       ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_end", {}, ctx);    // overlay dismissed while idle
-      assert.ok(ctx.ui._calls.length >= 1);
-      assert.equal(ctx.ui._calls[0], "✓ idle-tab", `expected resting, got: ${ctx.ui._calls[0]}`);
+      await pi.fire("session_before_compact", { reason: "threshold", willRetry: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
     });
 
-    test("overlay end while main run active → working title", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s-active-end", "active-tab", "/tmp", { idle: false });
-      await pi.fire("session_start", {}, ctx);
-      await pi.fire("agent_start", {}, ctx);
-      await pi.fire("ui_prompt_start", {}, ctx);  // mid-run overlay
-      ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_end", {}, ctx);    // overlay dismissed while run still active
-      assert.ok(ctx.ui._calls.length >= 1);
-      assert.equal(ctx.ui._calls[0], "⏳ active-tab", `expected working, got: ${ctx.ui._calls[0]}`);
-    });
-
-    test("ui_prompt_end then agent_settled both idle → resting", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s-order-a", "order-a-tab", "/tmp", { idle: true });
+    test("prompt open → needs-you (activity=working underneath)", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("cb2", "tab");
       await pi.fire("session_start", {}, ctx);
       await pi.fire("ui_prompt_start", {}, ctx);
       ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_end", {}, ctx);
-      assert.equal(ctx.ui._calls[0], "✓ order-a-tab", `after ui_prompt_end: ${ctx.ui._calls[0]}`);
-      await pi.fire("agent_settled", {}, ctx);
-      const last = ctx.ui._calls[ctx.ui._calls.length - 1];
-      assert.equal(last, "✓ order-a-tab", `after agent_settled: ${last}`);
-    });
-
-    test("agent_settled then ui_prompt_end both idle → resting", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s-order-b", "order-b-tab", "/tmp", { idle: true });
-      await pi.fire("session_start", {}, ctx);
-      await pi.fire("agent_start", {}, ctx);
-      await pi.fire("ui_prompt_start", {}, ctx);
-      ctx.ui._calls.length = 0;
-      // agent_settled fires first — prompt still open → needs-you
-      await pi.fire("agent_settled", {}, ctx);
-      assert.equal(ctx.ui._calls[0], "❗ order-b-tab", `after agent_settled: ${ctx.ui._calls[0]}`);
-      // ui_prompt_end fires after, session idle → resting
-      ctx._setIdle(true);
-      await pi.fire("ui_prompt_end", {}, ctx);
-      const last = ctx.ui._calls[ctx.ui._calls.length - 1];
-      assert.equal(last, "✓ order-b-tab", `after ui_prompt_end: ${last}`);
-    });
-
-    test("working: prompt opens, main settles while open → needs-you, then close → working", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      // isIdle false: agent still considered active after settle event in this scenario
-      // (pi coalesces but prompt is the blocking factor; isIdle stays false until run fully ends)
-      const ctx = makeCtx("s-settle-then-close", "stc-tab", "/tmp", { idle: false });
-      await pi.fire("session_start", {}, ctx);
-      await pi.fire("agent_start", {}, ctx);       // ⏳
-      await pi.fire("ui_prompt_start", {}, ctx);   // ❗
-      ctx.ui._calls.length = 0;
-      await pi.fire("agent_settled", {}, ctx);     // prompt still open → ❗
-      assert.equal(ctx.ui._calls[0], "❗ stc-tab", `after agent_settled: ${ctx.ui._calls[0]}`);
-      ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_end", {}, ctx);     // prompt closes, not idle → ⏳
-      assert.equal(ctx.ui._calls[0], "⏳ stc-tab", `after prompt_end: ${ctx.ui._calls[0]}`);
-    });
-
-    test("prompt closes before main settles → working, then resting", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s-prompt-first", "pf-tab", "/tmp", { idle: false });
-      await pi.fire("session_start", {}, ctx);
-      await pi.fire("agent_start", {}, ctx);       // ⏳
-      await pi.fire("ui_prompt_start", {}, ctx);   // ❗
-      ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_end", {}, ctx);     // prompt closes, run active → ⏳
-      assert.equal(ctx.ui._calls[0], "⏳ pf-tab", `after prompt_end: ${ctx.ui._calls[0]}`);
-      ctx.ui._calls.length = 0;
-      ctx._setIdle(true);
-      await pi.fire("agent_settled", {}, ctx);     // main settles → ✓
-      assert.equal(ctx.ui._calls[0], "✓ pf-tab", `after agent_settled: ${ctx.ui._calls[0]}`);
-    });
-
-    test("idle prompt: open then close → resting", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s-idle-prompt", "ip-tab", "/tmp", { idle: true });
-      await pi.fire("session_start", {}, ctx);
-      ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_start", {}, ctx);  // needs-you
-      assert.equal(ctx.ui._calls[0], "❗ ip-tab");
-      ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_end", {}, ctx);    // back to resting
-      assert.equal(ctx.ui._calls[0], "✓ ip-tab");
-    });
-
-    test("prompt starts after agent settles → needs-you", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s-post-settle", "ps-tab", "/tmp", { idle: true });
-      await pi.fire("session_start", {}, ctx);
-      await pi.fire("agent_start", {}, ctx);
-      ctx._setIdle(true);
-      await pi.fire("agent_settled", {}, ctx);    // ✓
-      ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_start", {}, ctx);  // ❗ even after settle
-      assert.equal(ctx.ui._calls[0], "❗ ps-tab");
-    });
-
-    test("duplicate ui_prompt_start does not produce impossible state", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s-dup-start", "ds-tab", "/tmp", { idle: false });
-      await pi.fire("session_start", {}, ctx);
-      await pi.fire("agent_start", {}, ctx);
-      await pi.fire("ui_prompt_start", {}, ctx);  // first start
-      ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_start", {}, ctx);  // duplicate start (coalesced by pi)
-      assert.equal(ctx.ui._calls[0], "❗ ds-tab"); // still needs-you, no invalid state
-    });
-
-    test("duplicate ui_prompt_end collapses to working without error", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
-      const ctx = makeCtx("s-dup-end", "de-tab", "/tmp", { idle: false });
-      await pi.fire("session_start", {}, ctx);
-      await pi.fire("agent_start", {}, ctx);
-      await pi.fire("ui_prompt_start", {}, ctx);
-      await pi.fire("ui_prompt_end", {}, ctx);    // first end → working
-      ctx.ui._calls.length = 0;
-      await pi.fire("ui_prompt_end", {}, ctx);    // spurious second end
-      assert.equal(ctx.ui._calls[0], "⏳ de-tab"); // working, not resting or invalid
+      await pi.fire("session_before_compact", { reason: "manual", willRetry: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "❗ tab");
     });
   });
 
-  // ── Integration: correct title calls across full lifecycle ────────────────
+  describe("compaction: session_compact", () => {
+    test("manual + willRetry=false, no prompt → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sc1", "tab");
+      await pi.fire("session_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact", { reason: "manual", willRetry: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "✓ tab");
+    });
 
-  describe("ExtensionAPI: correct title calls full lifecycle", () => {
-    test("titles in correct order across all transitions", async () => {
-      const pi = makeMockApi();
-      extensionFactory(pi);
+    test("manual + willRetry=true, no prompt → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sc2", "tab");
+      await pi.fire("session_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact", { reason: "manual", willRetry: true }, ctx);
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+    });
 
-      // isIdle starts false (agent running), set idle after settled
-      const ctx = makeCtx("sid-lifecycle", "my-session", "/tmp", { idle: false });
-      await pi.fire("session_start", {}, ctx);    // ✓
-      await pi.fire("agent_start", {}, ctx);      // ⏳
-      await pi.fire("ui_prompt_start", {}, ctx);  // ❗
-      await pi.fire("ui_prompt_end", {}, ctx);    // ⏳ (run still active)
-      ctx._setIdle(true);
-      await pi.fire("agent_settled", {}, ctx);    // ✓
+    test("threshold + willRetry=false, no prompt → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sc3", "tab");
+      await pi.fire("session_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact", { reason: "threshold", willRetry: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+    });
 
-      const [t0, t1, t2, t3, t4] = ctx.ui._calls;
-      assert.equal(t0, "✓ my-session",  `session_start:    ${t0}`);
-      assert.equal(t1, "⏳ my-session", `agent_start:      ${t1}`);
-      assert.equal(t2, "❗ my-session", `ui_prompt_start:  ${t2}`);
-      assert.equal(t3, "⏳ my-session", `ui_prompt_end:    ${t3}`);
-      assert.equal(t4, "✓ my-session",  `agent_settled:    ${t4}`);
+    test("overflow + willRetry=true, no prompt → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sc4", "tab");
+      await pi.fire("session_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact", { reason: "overflow", willRetry: true }, ctx);
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+    });
+
+    test("threshold compact while prompt open → needs-you; close → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sc5", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("agent_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact", { reason: "threshold", willRetry: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "❗ tab");
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+    });
+
+    test("manual compact while prompt open → needs-you; close → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sc6", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact", { reason: "manual", willRetry: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "❗ tab");
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);
+      assert.equal(ctx.ui._calls[0], "✓ tab");
+    });
+
+    test("threshold compact → agent_settled → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sc7", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("agent_start", {}, ctx);
+      await pi.fire("session_compact", { reason: "threshold", willRetry: false }, ctx);
+      assert.equal(ctx.ui._calls.at(-1), "⏳ tab");
+      ctx.ui._calls.length = 0;
+      await pi.fire("agent_settled", {}, ctx);
+      assert.equal(ctx.ui._calls[0], "✓ tab");
+    });
+
+    // CRITICAL: auto compact while prompt, agent settles while prompt still open → resting after close
+    test("auto compact while prompt open, agent settles before close → resting after close", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sc8", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("agent_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      await pi.fire("session_compact", { reason: "threshold", willRetry: false }, ctx); // activity=working, display=❗
+      assert.equal(ctx.ui._calls.at(-1), "❗ tab");
+      await pi.fire("agent_settled", {}, ctx);    // activity=resting, prompt still open → ❗
+      assert.equal(ctx.ui._calls.at(-1), "❗ tab", `after agent_settled: ${ctx.ui._calls.at(-1)}`);
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);    // activity=resting, no prompt → ✓
+      assert.equal(ctx.ui._calls[0], "✓ tab", `after prompt close: ${ctx.ui._calls[0]}`);
+    });
+  });
+
+  describe("compaction: session_compact_failed", () => {
+    test("manual + willRetry=false → resting", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sf1", "tab");
+      await pi.fire("session_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact_failed",
+        { reason: "manual", willRetry: false, aborted: false, fromExtension: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "✓ tab");
+    });
+
+    test("manual + willRetry=true → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sf2", "tab");
+      await pi.fire("session_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact_failed",
+        { reason: "manual", willRetry: true, aborted: true, fromExtension: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+    });
+
+    test("threshold fail → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sf3", "tab");
+      await pi.fire("session_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact_failed",
+        { reason: "threshold", willRetry: false, aborted: false, fromExtension: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
+    });
+
+    test("overflow fail while prompt open → needs-you; close → working", async () => {
+      const pi = makeMockApi(); extensionFactory(pi);
+      const ctx = makeCtx("sf4", "tab");
+      await pi.fire("session_start", {}, ctx);
+      await pi.fire("ui_prompt_start", {}, ctx);
+      ctx.ui._calls.length = 0;
+      await pi.fire("session_compact_failed",
+        { reason: "overflow", willRetry: true, aborted: false, fromExtension: false }, ctx);
+      assert.equal(ctx.ui._calls[0], "❗ tab");
+      ctx.ui._calls.length = 0;
+      await pi.fire("ui_prompt_end", {}, ctx);
+      assert.equal(ctx.ui._calls[0], "⏳ tab");
     });
   });
 }

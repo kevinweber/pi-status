@@ -18,11 +18,28 @@ pi install npm:@kevinweber/pi-status
 
 The title uses the format `<state> <name>`.
 
-| State | Symbol | Trigger event |
+The extension tracks two independent axes per tab:
+
+- **activity** (`working` / `resting`) — set by agent and compaction events
+- **promptOpen** (`true` / `false`) — set by `ui_prompt_start` / `ui_prompt_end`
+
+Displayed state is always `promptOpen ? "needs-you" : activity`.
+
+| State | Symbol | When |
 | --- | --- | --- |
-| working | ⏳ | `agent_start` |
-| needs-you | ❗ | `ui_prompt_start` |
-| resting | ✓ | `agent_settled` |
+| working | ⏳ | `activity=working` and no prompt open |
+| needs-you | ❗ | prompt open (regardless of activity) |
+| resting | ✓ | `activity=resting` and no prompt open |
+
+### Compaction activity mapping
+
+All compaction events set `activity`; the displayed state is then derived from `promptOpen ? "needs-you" : activity`.
+
+| Event | Condition | activity |
+| --- | --- | --- |
+| `session_before_compact` | — | working |
+| `session_compact` / `session_compact_failed` | `reason=manual`, `willRetry=false` | resting |
+| `session_compact` / `session_compact_failed` | otherwise | working |
 
 ## Naming
 

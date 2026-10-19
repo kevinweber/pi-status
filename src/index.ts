@@ -4,7 +4,13 @@
  */
 
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	SessionBeforeCompactEvent,
+	SessionCompactEvent,
+	SessionCompactFailedEvent,
+} from "@earendil-works/pi-coding-agent";
 
 export const TITLE_MAX = 80;
 export const REASSERT_DELAY_MS = 500;
@@ -27,10 +33,10 @@ export function truncate(s: string, max: number): string {
 }
 
 export type State = "working" | "needs-you" | "resting";
+type Activity = Exclude<State, "needs-you">;
 
-// Per-tab state, keyed by session ID.
 export interface TabState {
-	state: State;
+	activity: Activity;
 	promptOpen: boolean;
 	cwd: string;
 	sessionName: string | undefined;
@@ -38,8 +44,9 @@ export interface TabState {
 	reassertTimer: ReturnType<typeof setTimeout> | undefined;
 }
 
-export function buildTitle(tab: Pick<TabState, "state" | "cwd" | "sessionName">): string {
-	const stateGlyph = tab.state === "working" ? "⏳" : tab.state === "needs-you" ? "❗" : "✓";
+export function buildTitle(tab: Pick<TabState, "activity" | "promptOpen" | "cwd" | "sessionName">): string {
+	const state: State = tab.promptOpen ? "needs-you" : tab.activity;
+	const stateGlyph = state === "working" ? "⏳" : state === "needs-you" ? "❗" : "✓";
 	const label = tab.sessionName
 		?? (envEnabled("PI_STATUS_TITLE_CWD")
 			? truncate(path.basename(path.resolve(tab.cwd)) || tab.cwd, 24)
@@ -55,7 +62,7 @@ export default function (pi: ExtensionAPI) {
 		let tab = tabs.get(id);
 		if (!tab) {
 			tab = {
-				state: "resting",
+				activity: "resting",
 				promptOpen: false,
 				cwd: process.cwd(),
 				sessionName: undefined,
@@ -95,7 +102,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_e, ctx) => {
 		const tab = getTab(ctx);
-		tab.state = "resting";
+		tab.activity = "resting";
 		tab.promptOpen = false;
 		remember(tab, ctx);
 		setTitle(tab, ctx); reassert(tab);
@@ -120,36 +127,56 @@ export default function (pi: ExtensionAPI) {
 		setTitle(tab, ctx);
 	});
 
-	function deriveState(tab: TabState, ctx: ExtensionContext): State {
-		if (tab.promptOpen) return "needs-you";
-		return ctx.isIdle() ? "resting" : "working";
-	}
-
 	pi.on("agent_start", async (_e, ctx) => {
 		const tab = getTab(ctx);
-		// Prompt takes priority; only update state when no prompt is open.
-		if (!tab.promptOpen) tab.state = "working";
+		tab.activity = "working";
+		remember(tab, ctx); setTitle(tab, ctx);
+	});
+
+	pi.on("agent_settled", async (_e, ctx) => {
+		const tab = getTab(ctx);
+		tab.activity = "resting";
 		remember(tab, ctx); setTitle(tab, ctx);
 	});
 
 	pi.on("ui_prompt_start", async (_e, ctx) => {
 		const tab = getTab(ctx);
 		tab.promptOpen = true;
-		tab.state = "needs-you";
 		remember(tab, ctx); setTitle(tab, ctx);
 	});
 
 	pi.on("ui_prompt_end", async (_e, ctx) => {
 		const tab = getTab(ctx);
 		tab.promptOpen = false;
-		tab.state = deriveState(tab, ctx);
 		remember(tab, ctx); setTitle(tab, ctx);
 	});
 
-	pi.on("agent_settled", async (_e, ctx) => {
+
+	pi.on("session_before_compact", async (_e: SessionBeforeCompactEvent, ctx) => {
 		const tab = getTab(ctx);
-		// Do not override needs-you when a prompt is still open.
-		if (!tab.promptOpen) tab.state = deriveState(tab, ctx);
+		tab.activity = "working";
+		remember(tab, ctx); setTitle(tab, ctx);
+	});
+
+	// manual + no willRetry → resting (user-initiated, nothing follows)
+	// threshold / overflow  → working (Pi continues the interrupted turn)
+	// willRetry = true      → working (aborted turn will be retried)
+	function compactionActivity(
+		e: Pick<SessionCompactEvent | SessionCompactFailedEvent, "reason" | "willRetry">,
+	): "working" | "resting" {
+		if (e.reason === "manual" && !e.willRetry) return "resting";
+		return "working";
+	}
+
+	pi.on("session_compact", async (e: SessionCompactEvent, ctx) => {
+		const tab = getTab(ctx);
+		tab.activity = compactionActivity(e);
+		remember(tab, ctx); setTitle(tab, ctx);
+	});
+
+	pi.on("session_compact_failed", async (e: SessionCompactFailedEvent, ctx) => {
+		const tab = getTab(ctx);
+		tab.activity = compactionActivity(e);
 		remember(tab, ctx); setTitle(tab, ctx);
 	});
 }
