@@ -1,6 +1,6 @@
 {
   "name": "@kevinweber/pi-status",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "Pi terminal tab titles with session names and working, waiting-for-input, and idle indicators",
   "keywords": [
     "pi-package",
