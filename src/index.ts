@@ -31,6 +31,7 @@ export type State = "working" | "needs-you" | "resting";
 // Per-tab state, keyed by session ID.
 export interface TabState {
 	state: State;
+	promptOpen: boolean;
 	cwd: string;
 	sessionName: string | undefined;
 	ctxRef: ExtensionContext | undefined;
@@ -55,6 +56,7 @@ export default function (pi: ExtensionAPI) {
 		if (!tab) {
 			tab = {
 				state: "resting",
+				promptOpen: false,
 				cwd: process.cwd(),
 				sessionName: undefined,
 				ctxRef: undefined,
@@ -94,6 +96,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_e, ctx) => {
 		const tab = getTab(ctx);
 		tab.state = "resting";
+		tab.promptOpen = false;
 		remember(tab, ctx);
 		setTitle(tab, ctx); reassert(tab);
 	});
@@ -117,27 +120,36 @@ export default function (pi: ExtensionAPI) {
 		setTitle(tab, ctx);
 	});
 
+	function deriveState(tab: TabState, ctx: ExtensionContext): State {
+		if (tab.promptOpen) return "needs-you";
+		return ctx.isIdle() ? "resting" : "working";
+	}
+
 	pi.on("agent_start", async (_e, ctx) => {
 		const tab = getTab(ctx);
-		tab.state = "working";
+		// Prompt takes priority; only update state when no prompt is open.
+		if (!tab.promptOpen) tab.state = "working";
 		remember(tab, ctx); setTitle(tab, ctx);
 	});
 
 	pi.on("ui_prompt_start", async (_e, ctx) => {
 		const tab = getTab(ctx);
+		tab.promptOpen = true;
 		tab.state = "needs-you";
 		remember(tab, ctx); setTitle(tab, ctx);
 	});
 
 	pi.on("ui_prompt_end", async (_e, ctx) => {
 		const tab = getTab(ctx);
-		tab.state = "working";
+		tab.promptOpen = false;
+		tab.state = deriveState(tab, ctx);
 		remember(tab, ctx); setTitle(tab, ctx);
 	});
 
 	pi.on("agent_settled", async (_e, ctx) => {
 		const tab = getTab(ctx);
-		tab.state = "resting";
+		// Do not override needs-you when a prompt is still open.
+		if (!tab.promptOpen) tab.state = deriveState(tab, ctx);
 		remember(tab, ctx); setTitle(tab, ctx);
 	});
 }
